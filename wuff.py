@@ -25,6 +25,12 @@ def parse_csv(lines):
     return csv.DictReader(lines)
 
 
+def sex_to_letter(dog):
+    "Return m (male) or f (female) based on the dog's sex."
+    sex = dog["SexHundCd"]
+    return {"1": "m", "2": "f"}[sex]
+
+
 @click.group()
 @click.option(
     "--year", default=datetime.now().year, help="Limit output to specific year."
@@ -41,7 +47,15 @@ def cli(ctx, year):
 @click.argument("name")
 def find(ctx, name):
     """Find a dog by its name."""
-    click.echo(f"TODO: FIND {name}, {ctx.obj['year']}")
+    reader = parse_csv(get_dog_data(URL_DOG_DATA))
+    for row in filter(
+        lambda row: row["HundenameText"] == name
+        # todo: use last year from which there is a result
+        and row["StichtagDatJahr"] == str(ctx.obj["year"]),
+        reader,
+    ):
+        sex_letter = sex_to_letter(row)
+        click.echo(f"{row['HundenameText']} {row['GebDatHundJahr']} ({sex_letter})")
 
 
 @cli.command()
