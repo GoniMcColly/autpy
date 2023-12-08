@@ -7,9 +7,14 @@ import csv
 import os
 import click
 import requests
+import random
+from pathlib import Path
 
 # pylint: disable=line-too-long
 URL_DOG_DATA = "https://data.stadt-zuerich.ch/dataset/sid_stapo_hundenamen_od1002/download/KUL100OD1002.csv"
+URL_DOG_IMAGE_BASE = "https://random.dog"
+URL_DOG_IMAGE_LIST = f"{URL_DOG_IMAGE_BASE}/doggos"
+ALLOWED_IMAGE_SUFFIXES = [".png", ".jpg", ".jpeg"]
 
 
 def get_dog_data(url):
@@ -22,6 +27,15 @@ def get_dog_data(url):
 def parse_csv(lines):
     """Create csv.DictReader from data lines."""
     return csv.DictReader(lines)
+
+
+def get_dog_image(url_image_base, url_list, allowed_suffixes):
+    r = requests.get(url_list, timeout=5)
+    image_list = r.json()
+    actually_images = [url for url in image_list if Path(url).suffix in allowed_suffixes]
+    image_url = random.choice(actually_images)
+    r = requests.get(f"{URL_DOG_IMAGE_BASE}/{image_url}", timeout=5)
+    return (r.content, Path(image_url).suffix)
 
 
 def sex_to_letter(dog):
@@ -82,7 +96,17 @@ def stats(ctx):
 @click.pass_context
 def create(ctx, output_dir):
     """Make up a new dog at random."""
-    click.echo(f"TODO: CREATE {ctx.obj['year']}, {output_dir}")
+    reader = parse_csv(get_dog_data(URL_DOG_DATA))
+    sex = random.choice(["m", "f"])
+    matching_sex = [row for row in reader if sex_to_letter(row) == sex]
+    name = random.choice(matching_sex)["HundenameText"]
+    birth_year = random.choice(matching_sex)["GebDatHundJahr"]
+    (image_data, image_ext) = get_dog_image(URL_DOG_IMAGE_BASE, URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES)
+    image_name = f"{name}_{birth_year}{image_ext}"
+    save_path = Path(output_dir) / image_name
+    with open(save_path, 'wb') as f:
+        f.write(image_data)
+    click.echo(f"{name} {birth_year} ({sex}) [{save_path}]")
 
 
 if __name__ == "__main__":
