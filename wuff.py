@@ -5,10 +5,10 @@ statistical information about those dogs, and to make up a new dog.
 """
 import csv
 import os
-import click
-import requests
 import random
 from pathlib import Path
+import click
+import requests
 
 # pylint: disable=line-too-long
 URL_DOG_DATA = "https://data.stadt-zuerich.ch/dataset/sid_stapo_hundenamen_od1002/download/KUL100OD1002.csv"
@@ -30,11 +30,17 @@ def parse_csv(lines):
 
 
 def get_dog_image(url_image_base, url_list, allowed_suffixes):
+    """
+    Downloads a randomly chosen dog picture.
+    Returns the raw image data and the image type (extension) as a tuple.
+    """
     r = requests.get(url_list, timeout=5)
     image_list = r.json()
-    actually_images = [url for url in image_list if Path(url).suffix in allowed_suffixes]
+    actually_images = [
+        url for url in image_list if Path(url).suffix in allowed_suffixes
+    ]
     image_url = random.choice(actually_images)
-    r = requests.get(f"{URL_DOG_IMAGE_BASE}/{image_url}", timeout=5)
+    r = requests.get(f"{url_image_base}/{image_url}", timeout=5)
     return (r.content, Path(image_url).suffix)
 
 
@@ -98,13 +104,19 @@ def create(ctx, output_dir):
     """Make up a new dog at random."""
     reader = parse_csv(get_dog_data(URL_DOG_DATA))
     sex = random.choice(["m", "f"])
-    matching_sex = [row for row in reader if sex_to_letter(row) == sex]
-    name = random.choice(matching_sex)["HundenameText"]
-    birth_year = random.choice(matching_sex)["GebDatHundJahr"]
-    (image_data, image_ext) = get_dog_image(URL_DOG_IMAGE_BASE, URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES)
+    matching_dogs = [row for row in reader if sex_to_letter(row) == sex]
+    if ctx.obj["year"]:
+        matching_dogs = [
+            row for row in matching_dogs if row["StichtagDatJahr"] == ctx.obj["year"]
+        ]
+    name = random.choice(matching_dogs)["HundenameText"]
+    birth_year = random.choice(matching_dogs)["GebDatHundJahr"]
+    (image_data, image_ext) = get_dog_image(
+        URL_DOG_IMAGE_BASE, URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES
+    )
     image_name = f"{name}_{birth_year}{image_ext}"
     save_path = Path(output_dir) / image_name
-    with open(save_path, 'wb') as f:
+    with open(save_path, "wb") as f:
         f.write(image_data)
     click.echo(f"{name} {birth_year} ({sex}) [{save_path}]")
 
