@@ -46,7 +46,7 @@ def find(ctx, name):
     """Find a dog by its name."""
     reader = parse_csv(get_dog_data(URL_DOG_DATA))
 
-    matching_name = list(filter(lambda row: row["HundenameText"] == name, reader))
+    matching_name = [row for row in reader if row["HundenameText"] == name]
 
     if len(matching_name) == 0:
         click.echo(f"No result for name {name}.")
@@ -57,10 +57,10 @@ def find(ctx, name):
         or max(matching_name, key=lambda row: row["StichtagDatJahr"])["StichtagDatJahr"]
     )
 
-    result = list(filter(lambda row: row["StichtagDatJahr"] == year, matching_name))
+    result = [row for row in matching_name if row["StichtagDatJahr"] == year]
 
     if len(result) == 0:
-        print(f"No result for year {year}.")
+        click.echo(f"No result for year {year}.")
         return
 
     for row in result:
