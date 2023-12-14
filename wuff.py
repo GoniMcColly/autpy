@@ -3,7 +3,6 @@
 This script provides a command line interface to search for dogs, retrieve
 statistical information about those dogs, and to make up a new dog.
 """
-from datetime import datetime
 import csv
 import os
 import click
@@ -25,10 +24,14 @@ def parse_csv(lines):
     return csv.DictReader(lines)
 
 
+def sex_to_letter(dog):
+    "Return m (male) or f (female) based on the dog's sex."
+    sex = dog["SexHundCd"]
+    return {"1": "m", "2": "f"}[sex]
+
+
 @click.group()
-@click.option(
-    "--year", default=datetime.now().year, help="Limit output to specific year."
-)
+@click.option("--year", help="Limit output to specific year.")
 @click.pass_context
 def cli(ctx, year):
     """Zürich Dog Tool"""
@@ -41,7 +44,28 @@ def cli(ctx, year):
 @click.argument("name")
 def find(ctx, name):
     """Find a dog by its name."""
-    click.echo(f"TODO: FIND {name}, {ctx.obj['year']}")
+    reader = parse_csv(get_dog_data(URL_DOG_DATA))
+
+    matching_name = [row for row in reader if row["HundenameText"] == name]
+
+    if len(matching_name) == 0:
+        click.echo(f"No result for name {name}.")
+        return
+
+    year = (
+        ctx.obj["year"]
+        or max(matching_name, key=lambda row: row["StichtagDatJahr"])["StichtagDatJahr"]
+    )
+
+    result = [row for row in matching_name if row["StichtagDatJahr"] == year]
+
+    if len(result) == 0:
+        click.echo(f"No result for year {year}.")
+        return
+
+    for row in result:
+        sex_letter = sex_to_letter(row)
+        click.echo(f"{row['HundenameText']} {row['GebDatHundJahr']} ({sex_letter})")
 
 
 @cli.command()
