@@ -7,6 +7,7 @@ import csv
 import os
 import random
 from pathlib import Path
+from enum import Enum
 import click
 import requests
 
@@ -17,16 +18,103 @@ URL_DOG_IMAGE_LIST = f"{URL_DOG_IMAGE_BASE}/doggos"
 ALLOWED_IMAGE_SUFFIXES = [".png", ".jpg", ".jpeg"]
 
 
-def get_dog_data(url):
-    """Retrieve data from Zurich API."""
-    r = requests.get(url, timeout=5)
-    r.encoding = "utf-8-sig"
-    return r.text.splitlines()
+class Dog:
+    """Dog entity, has getters to read dog data from."""
+
+    class Sex(Enum):
+        """Sex enumeration defines male and female."""
+
+        MALE = "m"
+        FEMALE = "f"
+
+        def __str__(self):
+            return f"{self.value}"
+
+    def __init__(self, data):
+        self.data = data
+
+    @property
+    def name(self):
+        """The dog's name."""
+        return self.data["HundenameText"]
+
+    @property
+    def sex(self):
+        """The dog's sex."""
+        sex = self.data["SexHundCd"]
+        return {"1": Dog.Sex.MALE, "2": Dog.Sex.FEMALE}[sex]
+
+    @property
+    def birth_year(self):
+        """The dog's birth year."""
+        return int(self.data["GebDatHundJahr"])
+
+    @property
+    def record_year(self):
+        """The year this data was recorded in."""
+        return int(self.data["StichtagDatJahr"])
+
+    @property
+    def count(self):
+        """The number of duplicate dogs."""
+        return int(self.data["AnzHunde"])
 
 
-def parse_csv(lines):
-    """Create csv.DictReader from data lines."""
-    return csv.DictReader(lines)
+class DogData:
+    """DogData provides a reusable iterator over dog statistics."""
+
+    @staticmethod
+    def retrieve(url):
+        """Retrieve data from an API."""
+
+        def get_dog_data(url):
+            r = requests.get(url, timeout=5)
+            r.encoding = "utf-8-sig"
+            return r.text.splitlines()
+
+        def parse_csv(lines):
+            return csv.DictReader(lines)
+
+        reader = parse_csv(get_dog_data(url))
+        return DogData(reader)
+
+    def __init__(self, data):
+        self.current = 0
+        self.data = list(data)
+
+    def __iter__(self):
+        self.current = 0
+        return self
+
+    def __next__(self):
+        cur = self.current
+        if cur < len(self.data):
+            self.current += 1
+            return Dog(self.data[cur])
+        raise StopIteration
+
+
+# @from: https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
+class Singleton(type):
+    """Metaclass to create singletons."""
+
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+
+# pylint: disable=too-few-public-methods
+class DogDataCache(metaclass=Singleton):
+    """Caches the API response."""
+
+    def __init__(self):
+        self.dog_data = DogData.retrieve(URL_DOG_DATA)
+
+    def __call__(self):
+        return self.dog_data
 
 
 def get_dog_image(url_image_base, url_list, allowed_suffixes):
@@ -41,13 +129,7 @@ def get_dog_image(url_image_base, url_list, allowed_suffixes):
     ]
     image_url = random.choice(actually_images)
     r = requests.get(f"{url_image_base}/{image_url}", timeout=5)
-    return (r.content, Path(image_url).suffix)
-
-
-def sex_to_letter(dog):
-    "Return m (male) or f (female) based on the dog's sex."
-    sex = dog["SexHundCd"]
-    return {"1": "m", "2": "f"}[sex]
+    return r.content, Path(image_url).suffix
 
 
 @click.group()
@@ -56,7 +138,7 @@ def sex_to_letter(dog):
 def cli(ctx, year):
     """Zürich Dog Tool"""
     ctx.ensure_object(dict)
-    ctx.obj["year"] = year
+    ctx.obj["year"] = int(year) if year else None
 
 
 @cli.command()
@@ -64,9 +146,9 @@ def cli(ctx, year):
 @click.argument("name")
 def find(ctx, name):
     """Find a dog by its name."""
-    reader = parse_csv(get_dog_data(URL_DOG_DATA))
+    dog_data = DogDataCache()()
 
-    matching_name = [row for row in reader if row["HundenameText"] == name]
+    matching_name = [dog for dog in dog_data if dog.name == name]
 
     if len(matching_name) == 0:
         click.echo(f"No result for name {name}.")
@@ -74,18 +156,17 @@ def find(ctx, name):
 
     year = (
         ctx.obj["year"]
-        or max(matching_name, key=lambda row: row["StichtagDatJahr"])["StichtagDatJahr"]
+        or max(matching_name, key=lambda dog: dog.record_year).record_year
     )
 
-    result = [row for row in matching_name if row["StichtagDatJahr"] == year]
+    result = [dog for dog in matching_name if dog.record_year == year]
 
     if len(result) == 0:
         click.echo(f"No result for year {year}.")
         return
 
-    for row in result:
-        sex_letter = sex_to_letter(row)
-        click.echo(f"{row['HundenameText']} {row['GebDatHundJahr']} ({sex_letter})")
+    for dog in result:
+        click.echo(f"{dog.name} {dog.birth_year} ({dog.sex})")
 
 
 @cli.command()
@@ -94,7 +175,7 @@ def stats(ctx):
     """Print interesting stats about dog data."""
     # ***Pylint ist doof ;<<***
     # pylint: disable=too-many-locals
-    reader = parse_csv(get_dog_data(URL_DOG_DATA))
+    dog_data = DogDataCache()()
     longest_name = ""
     shortest_name = None
     male_name_count = {}
@@ -104,32 +185,28 @@ def stats(ctx):
     first_year = None
     last_year = 0
 
-    data = (
-        filter(lambda row: row["StichtagDatJahr"] == ctx.obj["year"], reader)
+    dog_data = (
+        filter(lambda dog: dog.record_year == ctx.obj["year"], dog_data)
         if ctx.obj["year"]
-        else reader
+        else dog_data
     )
-    for row in data:
-        if row["HundenameText"] == "?":
+    for dog in dog_data:
+        if dog.name == "?":
             continue
-        if len(row["HundenameText"]) > len(longest_name):
-            longest_name = row["HundenameText"]
-        if shortest_name is None or len(row["HundenameText"]) < len(shortest_name):
-            shortest_name = row["HundenameText"]
-        if first_year is None or first_year > int(row["StichtagDatJahr"]):
-            first_year = int(row["StichtagDatJahr"])
-        if last_year < int(row["StichtagDatJahr"]):
-            last_year = int(row["StichtagDatJahr"])
-        if sex_to_letter(row) == "m":
-            male_name_count[row["HundenameText"]] = male_name_count.get(
-                row["HundenameText"], 0
-            ) + int(row["AnzHunde"])
-            male_dog_count += int(row["AnzHunde"])
+        if len(dog.name) > len(longest_name):
+            longest_name = dog.name
+        if shortest_name is None or len(dog.name) < len(shortest_name):
+            shortest_name = dog.name
+        if first_year is None or first_year > dog.record_year:
+            first_year = dog.record_year
+        if last_year < dog.record_year:
+            last_year = dog.record_year
+        if dog.sex == Dog.Sex.MALE:
+            male_name_count[dog.name] = male_name_count.get(dog.name, 0) + dog.count
+            male_dog_count += dog.count
         else:
-            female_name_count[row["HundenameText"]] = female_name_count.get(
-                row["HundenameText"], 0
-            ) + int(row["AnzHunde"])
-            female_dog_count += int(row["AnzHunde"])
+            female_name_count[dog.name] = female_name_count.get(dog.name, 0) + dog.count
+            female_dog_count += dog.count
 
     top_male_name_sorted = sorted(
         male_name_count.items(), key=lambda x: x[1], reverse=True
@@ -153,10 +230,12 @@ def stats(ctx):
     if first_year is None:
         click.echo(f"No data available for year: {ctx.obj['year']}")
         return
+
     if ctx.obj["year"]:
         click.echo(f"Showing stats for year: {ctx.obj['year']}")
     else:
         click.echo(f"Showing stats for years: {first_year} to {last_year}")
+
     click.echo(f"The longest dog name is: {longest_name}")
     click.echo(f"The shortest dog name is: {shortest_name}")
     click.echo(f"Top ten most common names overall: {top_overall_name_string}")
@@ -174,15 +253,15 @@ def stats(ctx):
 @click.pass_context
 def create(ctx, output_dir):
     """Make up a new dog at random."""
-    reader = parse_csv(get_dog_data(URL_DOG_DATA))
-    sex = random.choice(["m", "f"])
-    matching_dogs = [row for row in reader if sex_to_letter(row) == sex]
+    dog_data = DogDataCache()()
+    sex = random.choice([Dog.Sex.MALE, Dog.Sex.FEMALE])
+    matching_dogs = [dog for dog in dog_data if dog.sex == sex]
     if ctx.obj["year"]:
         matching_dogs = [
-            row for row in matching_dogs if row["StichtagDatJahr"] == ctx.obj["year"]
+            dog for dog in matching_dogs if dog.record_year == ctx.obj["year"]
         ]
-    name = random.choice(matching_dogs)["HundenameText"]
-    birth_year = random.choice(matching_dogs)["GebDatHundJahr"]
+    name = random.choice(matching_dogs).name
+    birth_year = random.choice(matching_dogs).birth_year
     (image_data, image_ext) = get_dog_image(
         URL_DOG_IMAGE_BASE, URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES
     )
