@@ -3,6 +3,7 @@
 This script provides a command line interface to search for dogs, retrieve
 statistical information about those dogs, and to make up a new dog.
 """
+# 🙄
 # pylint: disable=multiple-imports
 import csv
 import os, sys, subprocess
@@ -10,6 +11,8 @@ import random
 from pathlib import Path
 from enum import Enum
 import logging
+from dataclasses import dataclass
+from typing import Optional
 import click
 import rich
 from rich.console import Console
@@ -29,6 +32,7 @@ __version__ = ".".join(__version_info__)
 console = Console()
 
 
+# 🙄
 # pylint: disable=line-too-long
 URL_DOG_DATA = "https://data.stadt-zuerich.ch/dataset/sid_stapo_hundenamen_od1002/download/KUL100OD1002.csv"
 URL_DOG_IMAGE_BASE = "https://random.dog"
@@ -48,6 +52,10 @@ class Dog:
         def __str__(self):
             return f"{self.value}"
 
+        def id(self) -> str:
+            """Returns the ID of the sex."""
+            return "1" if self == Dog.Sex.MALE else "2"
+
     def __init__(self, data):
         for field in [
             "HundenameText",
@@ -59,6 +67,19 @@ class Dog:
             if field not in data:
                 raise ValueError(f"missing field {field} in data")
         self.data = data
+
+    @staticmethod
+    def new(name, sex, birth_year, record_year, count):
+        """Create a new dog."""
+        return Dog(
+            {
+                "HundenameText": name,
+                "SexHundCd": sex.id() if isinstance(sex, Dog.Sex) else sex,
+                "GebDatHundJahr": birth_year,
+                "StichtagDatJahr": record_year,
+                "AnzHunde": count,
+            }
+        )
 
     @property
     def name(self):
@@ -210,18 +231,43 @@ def find(ctx, name):
     console.print(create_dog_search_table("results", result), justify="center")
 
 
-@cli.command()
-@click.pass_context
-def stats(ctx):
-    """Print interesting stats about dog data."""
-    # ***Pylint ist doof ;<<***
-    # pylint: disable=too-many-locals, too-many-statements
-    try:
-        dog_data = DogDataCache()()
-    except ValueError:
-        logging.exception("failed to retrieve dog data")
-        sys.exit(-1)
+# 🙄
+# pylint: disable=too-many-instance-attributes
+@dataclass(frozen=True)
+class DogStats:
+    """Various statistics about dog data."""
 
+    name_longest: str
+    name_shortest: str
+    top_names_male: dict[str, int]
+    top_names_female: dict[str, int]
+    dog_count_male: int
+    dog_count_female: int
+    first_year: Optional[int]
+    last_year: int
+
+    @property
+    def dog_count_overall(self) -> int:
+        """Overall dog count (male and female)."""
+        return self.dog_count_male + self.dog_count_female
+
+    @property
+    def top_names_overall(self) -> dict[str, int]:
+        """Top names overall (male and female)."""
+        return sorted(
+            self.top_names_male + self.top_names_female,
+            key=lambda x: x[1],
+            reverse=True,
+        )[:10]
+
+
+def analyze(dog_data: DogData, year: Optional[int] = None) -> DogStats:
+    """
+    Calculate various statistics about dog data.
+    Limit statistics to a specific year if `year` is set.
+    """
+    # 🙄
+    # pylint: disable=too-many-locals, too-many-statements
     longest_name = ""
     shortest_name = None
     male_name_count = {}
@@ -232,9 +278,7 @@ def stats(ctx):
     last_year = 0
 
     dog_data = (
-        filter(lambda dog: dog.record_year == ctx.obj["year"], dog_data)
-        if ctx.obj["year"]
-        else dog_data
+        filter(lambda dog: dog.record_year == year, dog_data) if year else dog_data
     )
     for dog in dog_data:
         if dog.name == "?":
@@ -254,6 +298,108 @@ def stats(ctx):
             female_name_count[dog.name] = female_name_count.get(dog.name, 0) + dog.count
             female_dog_count += dog.count
 
+    top_male_name_sorted = sorted(
+        male_name_count.items(), key=lambda x: x[1], reverse=True
+    )[:10]
+    top_female_name_sorted = sorted(
+        female_name_count.items(), key=lambda x: x[1], reverse=True
+    )[:10]
+
+    return DogStats(
+        name_longest=longest_name,
+        name_shortest=shortest_name,
+        top_names_male=top_male_name_sorted,
+        top_names_female=top_female_name_sorted,
+        dog_count_male=male_dog_count,
+        dog_count_female=female_dog_count,
+        first_year=first_year,
+        last_year=last_year,
+    )
+
+
+def test_analyze():
+    """Test the analyze function."""
+    test_dogs = [
+        Dog.new("Max", Dog.Sex.MALE, 2003, 2020, 3),
+        Dog.new("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
+        Dog.new("Mia", Dog.Sex.FEMALE, 2015, 2023, 2),
+    ]
+    s = analyze(test_dogs)
+
+    assert s.name_longest == "Leila"
+    assert s.name_shortest == "Max"  # first shortest name is used
+    assert s.top_names_male == [("Max", 3)]
+    assert s.top_names_female == [("Mia", 2), ("Leila", 1)]
+    assert s.top_names_overall == [("Max", 3), ("Mia", 2), ("Leila", 1)]
+    assert s.dog_count_male == 3
+    assert s.dog_count_female == 3
+    assert s.dog_count_overall == 6
+    assert s.first_year == 2020
+    assert s.last_year == 2023
+
+
+def test_analyze_with_year():
+    """Test the analyze function. Provide a year value."""
+    test_dogs = [
+        Dog.new("Max", Dog.Sex.MALE, 2003, 2020, 3),
+        Dog.new("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
+        Dog.new("Leila", Dog.Sex.FEMALE, 2015, 2020, 2),
+        Dog.new("Mi", Dog.Sex.FEMALE, 2015, 2023, 2),
+    ]
+    s = analyze(test_dogs, year=2020)
+
+    assert s.name_longest == "Leila"
+    assert s.name_shortest == "Max"  # Mi is ignored, bc wrong year
+    assert s.top_names_male == [("Max", 3)]
+    assert s.top_names_female == [("Leila", 2)]
+    assert s.top_names_overall == [("Max", 3), ("Leila", 2)]
+    assert s.dog_count_male == 3
+    assert s.dog_count_female == 2
+    assert s.dog_count_overall == 5
+    assert s.first_year == 2020
+    assert s.last_year == 2020
+
+
+@cli.command()
+@click.pass_context
+def stats(ctx):
+    """Print interesting stats about dog data."""
+    try:
+        dog_data = DogDataCache()()
+    except ValueError:
+        logging.exception("failed to retrieve dog data")
+        sys.exit(-1)
+
+    s = analyze(dog_data, ctx.obj["year"])
+
+    print("")
+    if s.first_year is None:
+        console.print(f"No data available for year: {ctx.obj['year']}", style="red")
+        return
+
+    if ctx.obj["year"]:
+        console.rule(f"Showing stats for year: {ctx.obj['year']}")
+    else:
+        console.rule(
+            f"Showing stats for years: {s.first_year} to {s.last_year}", style="b"
+        )
+        print("")
+
+    console.rule("[blue]The longest dog name is:[/blue]")
+    console.print(f"[cyan]{s.name_longest}[/cyan]", style="b", justify="center")
+    print("")
+    console.rule("[blue]The shortest dog name is:[/blue]")
+    console.print(f"[cyan]{s.name_shortest}[/cyan]", style="b", justify="center")
+    print("")
+    console.rule("[blue]Total number of female dogs:[/blue]")
+    console.print(f"[cyan]{s.dog_count_female}[/cyan]", style="b", justify="center")
+    print("")
+    console.rule("[blue]Total number of male dogs:[/blue]")
+    console.print(f"[cyan]{s.dog_count_male}[/cyan]", style="b", justify="center")
+    print("")
+    console.rule("[blue]Total number of dogs:[/blue]")
+    console.print(f"[cyan]{s.dog_count_overall}[/cyan]", style="b", justify="center")
+
     def create_name_table(title, name_data):
         table = Table(title=title, box=box.HEAVY_HEAD, show_lines=True)
         table.add_column("Rank", style="dim bold blue", width=6)
@@ -263,53 +409,15 @@ def stats(ctx):
             table.add_row(str(i), name, str(count))
         return table
 
-    top_male_name_sorted = sorted(
-        male_name_count.items(), key=lambda x: x[1], reverse=True
-    )[:10]
-    top_female_name_sorted = sorted(
-        female_name_count.items(), key=lambda x: x[1], reverse=True
-    )[:10]
-    top_overall_name_sorted = sorted(
-        top_male_name_sorted + top_female_name_sorted, key=lambda x: x[1], reverse=True
-    )[:10]
-
-    print("")
-    if first_year is None:
-        console.print(f"No data available for year: {ctx.obj['year']}", style="red")
-        return
-
-    if ctx.obj["year"]:
-        console.rule(f"Showing stats for year: {ctx.obj['year']}")
-    else:
-        console.rule(f"Showing stats for years: {first_year} to {last_year}", style="b")
-        print("")
-
-    console.rule("[blue]The longest dog name is:[/blue]")
-    console.print(f"[cyan]{longest_name}[/cyan]", style="b", justify="center")
-    print("")
-    console.rule("[blue]The shortest dog name is:[/blue]")
-    console.print(f"[cyan]{shortest_name}[/cyan]", style="b", justify="center")
-    print("")
-    console.rule("[blue]Total number of female dogs:[/blue]")
-    console.print(f"[cyan]{female_dog_count}[/cyan]", style="b", justify="center")
-    print("")
-    console.rule("[blue]Total number of male dogs:[/blue]")
-    console.print(f"[cyan]{male_dog_count}[/cyan]", style="b", justify="center")
-    print("")
-    console.rule("[blue]Total number of dogs:[/blue]")
-    console.print(
-        f"[cyan]{female_dog_count+male_dog_count}[/cyan]", style="b", justify="center"
-    )
-
     print("")
     table1 = create_name_table(
-        "[bold]Top Ten Most Common Names Overall[/bold]", top_overall_name_sorted
+        "[bold]Top Ten Most Common Names Overall[/bold]", s.top_names_overall
     )
     table2 = create_name_table(
-        "[bold]Top Ten Most Common Female Names[/bold]", top_female_name_sorted
+        "[bold]Top Ten Most Common Female Names[/bold]", s.top_names_female
     )
     table3 = create_name_table(
-        "[bold]Top Ten Most Common Male Names[/bold]", top_male_name_sorted
+        "[bold]Top Ten Most Common Male Names[/bold]", s.top_names_overall
     )
     tables_columns = rich.columns.Columns([table1, table2, table3], expand=True)
     console.print(tables_columns)
