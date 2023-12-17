@@ -9,19 +9,14 @@ import random
 from pathlib import Path
 from enum import Enum
 import click
-import rich_click as click
 import rich
 from rich.console import Console
 from rich.table import Table
 from rich import box
 from rich.progress import Progress
-import requests
-from time import sleep
-from urllib.request import urlopen
-
-from rich.progress import wrap_file
-
 from rich.traceback import install
+import requests
+
 install(show_locals=True)
 
 
@@ -134,21 +129,6 @@ class DogDataCache(metaclass=Singleton):
         return self.dog_data
 
 
-def get_dog_image(url_image_base, url_list, allowed_suffixes):
-    """
-    Downloads a randomly chosen dog picture.
-    Returns the raw image data and the image type (extension) as a tuple.
-    """
-    r = requests.get(url_list, timeout=5)
-    image_list = r.json()
-    actually_images = [
-        url for url in image_list if Path(url).suffix in allowed_suffixes
-    ]
-    image_url = random.choice(actually_images)
-    r = requests.get(f"{url_image_base}/{image_url}", timeout=5)
-    return r.content, Path(image_url).suffix
-
-
 @click.group()
 @click.option("--year", help="Limit output to specific year.")
 @click.pass_context
@@ -185,7 +165,7 @@ def find(ctx, name):
         table.add_column("Sex", style="bold magenta")
 
         for dog in dogs:
-            table.add_row(dog.name, str(dog.birth_year), dog.sex.value)  # Angenommen, 'sex' ist ein Enum
+            table.add_row(dog.name, str(dog.birth_year), dog.sex.value)
 
         return table
 
@@ -202,7 +182,7 @@ def find(ctx, name):
 def stats(ctx):
     """Print interesting stats about dog data."""
     # ***Pylint ist doof ;<<***
-    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-locals, too-many-statements
     dog_data = DogDataCache()()
     longest_name = ""
     shortest_name = None
@@ -212,7 +192,6 @@ def stats(ctx):
     female_dog_count = 0
     first_year = None
     last_year = 0
-
 
     dog_data = (
         filter(lambda dog: dog.record_year == ctx.obj["year"], dog_data)
@@ -237,9 +216,6 @@ def stats(ctx):
             female_name_count[dog.name] = female_name_count.get(dog.name, 0) + dog.count
             female_dog_count += dog.count
 
-
-
-    # Tabellen erstellen Rich
     def create_name_table(title, name_data):
         table = Table(title=title, box=box.HEAVY_HEAD, show_lines=True)
         table.add_column("Rank", style="dim bold blue", width=6)
@@ -258,19 +234,10 @@ def stats(ctx):
     top_overall_name_sorted = sorted(
         top_male_name_sorted + top_female_name_sorted, key=lambda x: x[1], reverse=True
     )[:10]
-    top_male_name_string = ", ".join(
-        [f"{name} ({count})" for name, count in top_male_name_sorted]
-    )
-    top_female_name_string = ", ".join(
-        [f"{name} ({count})" for name, count in top_female_name_sorted]
-    )
-    top_overall_name_string = ", ".join(
-        [f"{name} ({count})" for name, count in top_overall_name_sorted]
-    )
 
     print("")
     if first_year is None:
-        console.print(f"No data available for year: {ctx.obj['year']}", style="error")
+        console.print(f"No data available for year: {ctx.obj['year']}", style="red")
         return
 
     if ctx.obj["year"]:
@@ -279,33 +246,35 @@ def stats(ctx):
         console.rule(f"Showing stats for years: {first_year} to {last_year}", style="b")
         print("")
 
-    console.rule(f"[blue]The longest dog name is:[/blue]")
+    console.rule("[blue]The longest dog name is:[/blue]")
     console.print(f"[cyan]{longest_name}[/cyan]", style="b", justify="center")
     print("")
-    console.rule(f"[blue]The shortest dog name is:[/blue]")
+    console.rule("[blue]The shortest dog name is:[/blue]")
     console.print(f"[cyan]{shortest_name}[/cyan]", style="b", justify="center")
     print("")
-    console.rule(f"[blue]Total number of female dogs:[/blue]")
+    console.rule("[blue]Total number of female dogs:[/blue]")
     console.print(f"[cyan]{female_dog_count}[/cyan]", style="b", justify="center")
     print("")
-    console.rule(f"[blue]Total number of male dogs:[/blue]")
+    console.rule("[blue]Total number of male dogs:[/blue]")
     console.print(f"[cyan]{male_dog_count}[/cyan]", style="b", justify="center")
     print("")
-    console.rule(f"[blue]Total number of dogs:[/blue]")
-    console.print(f"[cyan]{female_dog_count+male_dog_count}[/cyan]", style="b", justify="center")
-
+    console.rule("[blue]Total number of dogs:[/blue]")
+    console.print(
+        f"[cyan]{female_dog_count+male_dog_count}[/cyan]", style="b", justify="center"
+    )
 
     print("")
-    # Erstellen und Anzeigen von Tabellen für die Top-Namen
-    table1 = (create_name_table("[bold]Top Ten Most Common Names Overall[/bold]", top_overall_name_sorted))
-    table2 = (create_name_table("[bold]Top Ten Most Common Female Names[/bold]", top_female_name_sorted))
-    table3 = (create_name_table("[bold]Top Ten Most Common Male Names[/bold]", top_male_name_sorted))
-
-    tables_columns = rich.columns.Columns([table1, table2, table3],  expand=True)
-
+    table1 = create_name_table(
+        "[bold]Top Ten Most Common Names Overall[/bold]", top_overall_name_sorted
+    )
+    table2 = create_name_table(
+        "[bold]Top Ten Most Common Female Names[/bold]", top_female_name_sorted
+    )
+    table3 = create_name_table(
+        "[bold]Top Ten Most Common Male Names[/bold]", top_male_name_sorted
+    )
+    tables_columns = rich.columns.Columns([table1, table2, table3], expand=True)
     console.print(tables_columns)
-
-
 
 
 @cli.command()
@@ -313,37 +282,58 @@ def stats(ctx):
     "--output-dir", "-o", default=os.getcwd(), help="Directory to save dog picture to."
 )
 @click.pass_context
-
 def create(ctx, output_dir):
-    """Make up a new dog at random."""
-    with Progress() as progress:
-        download_task = progress.add_task("[cyan]Downloading dog image...", total=100)
-        print("")
+    """Make up a new dog at random using data from real dogs."""
 
-        dog_data = DogDataCache()()
-        sex = random.choice([Dog.Sex.MALE, Dog.Sex.FEMALE])
-        matching_dogs = [dog for dog in dog_data if dog.sex == sex]
-        if ctx.obj["year"]:
-            matching_dogs = [
-                dog for dog in matching_dogs if dog.record_year == ctx.obj["year"]
-            ]
-        name = random.choice(matching_dogs).name
-        birth_year = random.choice(matching_dogs).birth_year
-        (image_data, image_ext) = get_dog_image(
-            URL_DOG_IMAGE_BASE, URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES
-        )
-        image_name = f"{name}_{birth_year}{image_ext}"
-        save_path = Path(output_dir) / image_name
-        while not progress.finished:
-            progress.update(download_task, advance=2)
-            sleep(0.1)
-        print("")
+    def get_dog_image_url(url_list, allowed_suffixes):
+        """Get an URL to a random dog picture."""
+        r = requests.get(url_list, timeout=5)
+        r.raise_for_status()
+        image_list = r.json()
+        actually_images = [
+            url for url in image_list if Path(url).suffix in allowed_suffixes
+        ]
+        image_url = random.choice(actually_images)
+        return image_url
 
-        with open(save_path, "wb") as f:
-            f.write(image_data)
-            #progress.update(download_task, advance=100)
-        print("")
-        console.rule(f"{name} {birth_year} ({sex}) [{save_path}]")
+    # @from: https://stackoverflow.com/a/37573701
+    def download_image(url_image_base, image_url, save_path):
+        r = requests.get(f"{url_image_base}/{image_url}", stream=True, timeout=5)
+        r.raise_for_status()
+        image_size = int(r.headers.get("Content-Length", 0))
+        downloaded_size = 0
+        with Progress(transient=True) as progress:
+            download_task = progress.add_task(
+                "Downloading dog picture", total=image_size
+            )
+            with open(save_path, "wb") as f:
+                for data in r.iter_content(1024):
+                    f.write(data)
+                    progress.update(download_task, advance=len(data))
+                    downloaded_size += len(data)
+        if downloaded_size != image_size:
+            raise ValueError(
+                f"could not download image {image_url} from {url_image_base}"
+            )
+
+    dog_data = DogDataCache()()
+    sex = random.choice([Dog.Sex.MALE, Dog.Sex.FEMALE])
+    matching_dogs = [dog for dog in dog_data if dog.sex == sex]
+    if ctx.obj["year"]:
+        matching_dogs = [
+            dog for dog in matching_dogs if dog.record_year == ctx.obj["year"]
+        ]
+    name = random.choice(matching_dogs).name
+    birth_year = random.choice(matching_dogs).birth_year
+
+    image_url = get_dog_image_url(URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES)
+    image_ext = Path(image_url).suffix
+    image_name = f"{name}_{birth_year}{image_ext}"
+    save_path = Path(output_dir) / image_name
+    download_image(URL_DOG_IMAGE_BASE, image_url, save_path)
+
+    # pylint: disable=anomalous-backslash-in-string
+    console.print(f"{name} {birth_year} ({sex}) \[{save_path}]")
 
 
 if __name__ == "__main__":
