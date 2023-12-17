@@ -550,8 +550,7 @@ def create(ctx, output_dir):
 
     try:
         image_urls = get_dog_image_urls(URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES)
-        # image_url = random.choice(image_urls)
-        image_url = image_urls[5]
+        image_url = random.choice(image_urls)
         image_ext = Path(image_url).suffix
         image_name = f"{name}_{birth_year}{image_ext}"
         save_path = Path(output_dir) / image_name
