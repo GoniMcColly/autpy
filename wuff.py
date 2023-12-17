@@ -3,6 +3,7 @@
 This script provides a command line interface to search for dogs, retrieve
 statistical information about those dogs, and to make up a new dog.
 """
+# pylint: disable=multiple-imports
 import csv
 import os, sys, subprocess
 import random
