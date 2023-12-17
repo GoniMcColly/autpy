@@ -40,6 +40,7 @@ URL_DOG_IMAGE_LIST = f"{URL_DOG_IMAGE_BASE}/doggos"
 ALLOWED_IMAGE_SUFFIXES = [".png", ".jpg", ".jpeg"]
 
 
+@dataclass(frozen=True)
 class Dog:
     """Dog entity, has getters to read dog data from."""
 
@@ -52,60 +53,22 @@ class Dog:
         def __str__(self):
             return f"{self.value}"
 
-        def id(self) -> str:
-            """Returns the ID of the sex."""
-            return "1" if self == Dog.Sex.MALE else "2"
-
-    def __init__(self, data):
-        for field in [
-            "HundenameText",
-            "SexHundCd",
-            "GebDatHundJahr",
-            "StichtagDatJahr",
-            "AnzHunde",
-        ]:
-            if field not in data:
-                raise ValueError(f"missing field {field} in data")
-        self.data = data
+    name: str
+    sex: Sex
+    birth_year: int
+    record_year: int
+    count: int
 
     @staticmethod
-    def new(name, sex, birth_year, record_year, count):
-        """Create a new dog."""
+    def from_dict(dic):
+        """Create a dog from dictionary data."""
         return Dog(
-            {
-                "HundenameText": name,
-                "SexHundCd": sex.id() if isinstance(sex, Dog.Sex) else sex,
-                "GebDatHundJahr": birth_year,
-                "StichtagDatJahr": record_year,
-                "AnzHunde": count,
-            }
+            name=dic["HundenameText"],
+            sex={"1": Dog.Sex.MALE, "2": Dog.Sex.FEMALE}[dic["SexHundCd"]],
+            birth_year=int(dic["GebDatHundJahr"]),
+            record_year=int(dic["StichtagDatJahr"]),
+            count=int(dic["AnzHunde"]),
         )
-
-    @property
-    def name(self):
-        """The dog's name."""
-        return self.data["HundenameText"]
-
-    @property
-    def sex(self):
-        """The dog's sex."""
-        sex = self.data["SexHundCd"]
-        return {"1": Dog.Sex.MALE, "2": Dog.Sex.FEMALE}[sex]
-
-    @property
-    def birth_year(self):
-        """The dog's birth year."""
-        return int(self.data["GebDatHundJahr"])
-
-    @property
-    def record_year(self):
-        """The year this data was recorded in."""
-        return int(self.data["StichtagDatJahr"])
-
-    @property
-    def count(self):
-        """The number of duplicate dogs."""
-        return int(self.data["AnzHunde"])
 
 
 class DogData:
@@ -128,7 +91,7 @@ class DogData:
 
     def __init__(self, data):
         self.current = 0
-        self.data = [Dog(row) for row in data]
+        self.data = [Dog.from_dict(row) for row in data]
 
     def __iter__(self):
         self.current = 0
@@ -320,9 +283,9 @@ def analyze(dog_data: DogData, year: Optional[int] = None) -> DogStats:
 def test_analyze():
     """Test the analyze function."""
     test_dogs = [
-        Dog.new("Max", Dog.Sex.MALE, 2003, 2020, 3),
-        Dog.new("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
-        Dog.new("Mia", Dog.Sex.FEMALE, 2015, 2023, 2),
+        Dog("Max", Dog.Sex.MALE, 2003, 2020, 3),
+        Dog("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
+        Dog("Mia", Dog.Sex.FEMALE, 2015, 2023, 2),
     ]
     s = analyze(test_dogs)
 
@@ -341,10 +304,10 @@ def test_analyze():
 def test_analyze_with_year():
     """Test the analyze function. Provide a year value."""
     test_dogs = [
-        Dog.new("Max", Dog.Sex.MALE, 2003, 2020, 3),
-        Dog.new("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
-        Dog.new("Leila", Dog.Sex.FEMALE, 2015, 2020, 2),
-        Dog.new("Mi", Dog.Sex.FEMALE, 2015, 2023, 2),
+        Dog("Max", Dog.Sex.MALE, 2003, 2020, 3),
+        Dog("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
+        Dog("Leila", Dog.Sex.FEMALE, 2015, 2020, 2),
+        Dog("Mi", Dog.Sex.FEMALE, 2015, 2023, 2),
     ]
     s = analyze(test_dogs, year=2020)
 
