@@ -21,6 +21,7 @@ from rich import box
 from rich.progress import Progress
 from rich.traceback import install
 import requests
+import pytest
 
 install(show_locals=True)
 
@@ -71,6 +72,37 @@ class Dog:
         )
 
 
+class TestDog:
+    """Unit tests for the Dog class."""
+
+    def test_dog_from_dict(self):
+        """Test creating a dog from a dictionary."""
+        dog = Dog.from_dict(
+            {
+                "HundenameText": "Shoto",
+                "SexHundCd": "1",
+                "GebDatHundJahr": "2005",
+                "StichtagDatJahr": "2024",
+                "AnzHunde": 1,
+            }
+        )
+        assert dog.name == "Shoto"
+        assert dog.sex == Dog.Sex.MALE
+        assert dog.birth_year == 2005
+        assert dog.record_year == 2024
+        assert dog.count == 1
+
+    def test_dog_from_dict_invalid(self):
+        """Test creating a dog from an invalid dictionary (should fail)."""
+        with pytest.raises(KeyError):
+            Dog.from_dict(
+                {
+                    "Hello": "World",
+                    "SomeNumber": 5,
+                }
+            )
+
+
 class DogData:
     """DogData provides a reusable iterator over dog statistics."""
 
@@ -103,6 +135,47 @@ class DogData:
             self.current += 1
             return self.data[cur]
         raise StopIteration
+
+
+class TestDogData:
+    """Unit tests for the DogData class."""
+
+    def test_dogdata_retrieve(self):
+        """Test retrieving API data."""
+        assert isinstance(DogData.retrieve(URL_DOG_DATA), DogData)
+
+    def test_dogdata_retrieve_wrong_data(self):
+        """Test retrieving invalid data."""
+        with pytest.raises(KeyError):
+            DogData.retrieve("https://www.example.com/no-dog-data-here/")
+
+    def test_dogdata_retrieve_wrong_url(self):
+        """Test retrieving data from an invalid URL."""
+        with pytest.raises(requests.exceptions.RequestException):
+            DogData.retrieve("https://this-page-does-not.exist/")
+
+    def test_dogdata_iterator(self):
+        """Test that the iterator can be reused."""
+        dogs = DogData(
+            [
+                {
+                    "HundenameText": "Shoto",
+                    "SexHundCd": "1",
+                    "GebDatHundJahr": "2005",
+                    "StichtagDatJahr": "2024",
+                    "AnzHunde": 1,
+                },
+                {
+                    "HundenameText": "Poppy",
+                    "SexHundCd": "2",
+                    "GebDatHundJahr": "2006",
+                    "StichtagDatJahr": "2025",
+                    "AnzHunde": 2,
+                },
+            ]
+        )
+        assert len(list(dogs)) == 2
+        assert len(list(dogs)) == 2  # use twice to make sure, iterator is reusable
 
 
 # @from: https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
@@ -230,7 +303,7 @@ def analyze(dog_data: DogData, year: Optional[int] = None) -> DogStats:
     Limit statistics to a specific year if `year` is set.
     """
     # 🙄
-    # pylint: disable=too-many-locals, too-many-statements
+    # pylint: disable=too-many-locals
     longest_name = ""
     shortest_name = None
     male_name_count = {}
@@ -280,47 +353,49 @@ def analyze(dog_data: DogData, year: Optional[int] = None) -> DogStats:
     )
 
 
-def test_analyze():
-    """Test the analyze function."""
-    test_dogs = [
-        Dog("Max", Dog.Sex.MALE, 2003, 2020, 3),
-        Dog("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
-        Dog("Mia", Dog.Sex.FEMALE, 2015, 2023, 2),
-    ]
-    s = analyze(test_dogs)
+class TestAnalyze:
+    """Unit tests for the analyze function."""
 
-    assert s.name_longest == "Leila"
-    assert s.name_shortest == "Max"  # first shortest name is used
-    assert s.top_names_male == [("Max", 3)]
-    assert s.top_names_female == [("Mia", 2), ("Leila", 1)]
-    assert s.top_names_overall == [("Max", 3), ("Mia", 2), ("Leila", 1)]
-    assert s.dog_count_male == 3
-    assert s.dog_count_female == 3
-    assert s.dog_count_overall == 6
-    assert s.first_year == 2020
-    assert s.last_year == 2023
+    def test_analyze(self):
+        """Test the analyze function."""
+        test_dogs = [
+            Dog("Max", Dog.Sex.MALE, 2003, 2020, 3),
+            Dog("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
+            Dog("Mia", Dog.Sex.FEMALE, 2015, 2023, 2),
+        ]
+        s = analyze(test_dogs)
 
+        assert s.name_longest == "Leila"
+        assert s.name_shortest == "Max"  # first shortest name is used
+        assert s.top_names_male == [("Max", 3)]
+        assert s.top_names_female == [("Mia", 2), ("Leila", 1)]
+        assert s.top_names_overall == [("Max", 3), ("Mia", 2), ("Leila", 1)]
+        assert s.dog_count_male == 3
+        assert s.dog_count_female == 3
+        assert s.dog_count_overall == 6
+        assert s.first_year == 2020
+        assert s.last_year == 2023
 
-def test_analyze_with_year():
-    """Test the analyze function. Provide a year value."""
-    test_dogs = [
-        Dog("Max", Dog.Sex.MALE, 2003, 2020, 3),
-        Dog("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
-        Dog("Leila", Dog.Sex.FEMALE, 2015, 2020, 2),
-        Dog("Mi", Dog.Sex.FEMALE, 2015, 2023, 2),
-    ]
-    s = analyze(test_dogs, year=2020)
+    def test_analyze_with_year(self):
+        """Test the analyze function. Provide a year value."""
+        test_dogs = [
+            Dog("Max", Dog.Sex.MALE, 2003, 2020, 3),
+            Dog("Leila", Dog.Sex.FEMALE, 2016, 2021, 1),
+            Dog("Leila", Dog.Sex.FEMALE, 2015, 2020, 2),
+            Dog("Mi", Dog.Sex.FEMALE, 2015, 2023, 2),
+        ]
+        s = analyze(test_dogs, year=2020)
 
-    assert s.name_longest == "Leila"
-    assert s.name_shortest == "Max"  # Mi is ignored, bc wrong year
-    assert s.top_names_male == [("Max", 3)]
-    assert s.top_names_female == [("Leila", 2)]
-    assert s.top_names_overall == [("Max", 3), ("Leila", 2)]
-    assert s.dog_count_male == 3
-    assert s.dog_count_female == 2
-    assert s.dog_count_overall == 5
-    assert s.first_year == 2020
-    assert s.last_year == 2020
+        assert s.name_longest == "Leila"
+        assert s.name_shortest == "Max"  # Mi is ignored, bc wrong year
+        assert s.top_names_male == [("Max", 3)]
+        assert s.top_names_female == [("Leila", 2)]
+        assert s.top_names_overall == [("Max", 3), ("Leila", 2)]
+        assert s.dog_count_male == 3
+        assert s.dog_count_female == 2
+        assert s.dog_count_overall == 5
+        assert s.first_year == 2020
+        assert s.last_year == 2020
 
 
 @cli.command()
