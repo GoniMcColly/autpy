@@ -9,6 +9,7 @@ import os, sys, subprocess
 import random
 from pathlib import Path
 from enum import Enum
+import logging
 import click
 import rich
 from rich.console import Console
@@ -19,6 +20,10 @@ from rich.traceback import install
 import requests
 
 install(show_locals=True)
+
+
+__version_info__ = ("0", "1", "0")
+__version__ = ".".join(__version_info__)
 
 
 console = Console()
@@ -44,6 +49,15 @@ class Dog:
             return f"{self.value}"
 
     def __init__(self, data):
+        for field in [
+            "HundenameText",
+            "SexHundCd",
+            "GebDatHundJahr",
+            "StichtagDatJahr",
+            "AnzHunde",
+        ]:
+            if field not in data:
+                raise ValueError(f"missing field {field} in data")
         self.data = data
 
     @property
@@ -93,7 +107,7 @@ class DogData:
 
     def __init__(self, data):
         self.current = 0
-        self.data = list(data)
+        self.data = [Dog(row) for row in data]
 
     def __iter__(self):
         self.current = 0
@@ -103,7 +117,7 @@ class DogData:
         cur = self.current
         if cur < len(self.data):
             self.current += 1
-            return Dog(self.data[cur])
+            return self.data[cur]
         raise StopIteration
 
 
@@ -124,6 +138,7 @@ class DogDataCache(metaclass=Singleton):
     """Caches the API response."""
 
     def __init__(self):
+        logging.debug("retrieving dog data from API")
         self.dog_data = DogData.retrieve(URL_DOG_DATA)
 
     def __call__(self):
@@ -132,11 +147,24 @@ class DogDataCache(metaclass=Singleton):
 
 @click.group()
 @click.option("--year", help="Limit output to specific year.")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging.")
 @click.pass_context
-def cli(ctx, year):
+def cli(ctx, year, verbose):
     """Zürich Dog Tool"""
     ctx.ensure_object(dict)
     ctx.obj["year"] = int(year) if year else None
+
+    logging.basicConfig(level=logging.DEBUG if verbose else logging.WARNING)
+    logging.debug("verbose logging enabled")
+
+    logging.debug("year set to %d", ctx.obj["year"])
+
+
+@cli.command()
+def version():
+    """Print version and exit."""
+    console.print(__version__)
+    sys.exit()
 
 
 @cli.command()
@@ -144,7 +172,11 @@ def cli(ctx, year):
 @click.argument("name")
 def find(ctx, name):
     """Find a dog by its name."""
-    dog_data = DogDataCache()()
+    try:
+        dog_data = DogDataCache()()
+    except ValueError:
+        logging.exception("failed to retrieve dog data")
+        sys.exit(-1)
 
     matching_name = [dog for dog in dog_data if dog.name == name]
 
@@ -184,7 +216,12 @@ def stats(ctx):
     """Print interesting stats about dog data."""
     # ***Pylint ist doof ;<<***
     # pylint: disable=too-many-locals, too-many-statements
-    dog_data = DogDataCache()()
+    try:
+        dog_data = DogDataCache()()
+    except ValueError:
+        logging.exception("failed to retrieve dog data")
+        sys.exit(-1)
+
     longest_name = ""
     shortest_name = None
     male_name_count = {}
@@ -324,7 +361,12 @@ def create(ctx, output_dir):
         else:
             subprocess.call(["open" if sys.platform == "darwin" else "xdg-open", file])
 
-    dog_data = DogDataCache()()
+    try:
+        dog_data = DogDataCache()()
+    except ValueError:
+        logging.exception("failed to retrieve dog data")
+        sys.exit(-1)
+
     sex = random.choice([Dog.Sex.MALE, Dog.Sex.FEMALE])
     matching_dogs = [dog for dog in dog_data if dog.sex == sex]
     if ctx.obj["year"]:
@@ -334,11 +376,15 @@ def create(ctx, output_dir):
     name = random.choice(matching_dogs).name
     birth_year = random.choice(matching_dogs).birth_year
 
-    image_url = get_dog_image_url(URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES)
-    image_ext = Path(image_url).suffix
-    image_name = f"{name}_{birth_year}{image_ext}"
-    save_path = Path(output_dir) / image_name
-    download_image(URL_DOG_IMAGE_BASE, image_url, save_path)
+    try:
+        image_url = get_dog_image_url(URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES)
+        image_ext = Path(image_url).suffix
+        image_name = f"{name}_{birth_year}{image_ext}"
+        save_path = Path(output_dir) / image_name
+        download_image(URL_DOG_IMAGE_BASE, image_url, save_path)
+    except requests.exceptions.RequestException:
+        logging.exception("failed to download dog picture")
+        sys.exit(-1)
 
     # pylint: disable=anomalous-backslash-in-string
     console.print(f"{name} {birth_year} ({sex}) \[{save_path}]")
