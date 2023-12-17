@@ -4,7 +4,7 @@ This script provides a command line interface to search for dogs, retrieve
 statistical information about those dogs, and to make up a new dog.
 """
 import csv
-import os
+import os, sys, subprocess
 import random
 from pathlib import Path
 from enum import Enum
@@ -316,6 +316,13 @@ def create(ctx, output_dir):
                 f"could not download image {image_url} from {url_image_base}"
             )
 
+    def open_default(file):
+        """Opens file with the associated default application."""
+        if sys.platform == "win32":
+            os.startfile(file)
+        else:
+            subprocess.call(["open" if sys.platform == "darwin" else "xdg-open", file])
+
     dog_data = DogDataCache()()
     sex = random.choice([Dog.Sex.MALE, Dog.Sex.FEMALE])
     matching_dogs = [dog for dog in dog_data if dog.sex == sex]
@@ -334,6 +341,7 @@ def create(ctx, output_dir):
 
     # pylint: disable=anomalous-backslash-in-string
     console.print(f"{name} {birth_year} ({sex}) \[{save_path}]")
+    open_default(save_path)
 
 
 if __name__ == "__main__":
