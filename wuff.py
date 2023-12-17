@@ -9,7 +9,24 @@ import random
 from pathlib import Path
 from enum import Enum
 import click
+import rich_click as click
+import rich
+from rich.console import Console
+from rich.table import Table
+from rich import box
+from rich.progress import Progress
 import requests
+from time import sleep
+from urllib.request import urlopen
+
+from rich.progress import wrap_file
+
+from rich.traceback import install
+install(show_locals=True)
+
+
+console = Console()
+
 
 # pylint: disable=line-too-long
 URL_DOG_DATA = "https://data.stadt-zuerich.ch/dataset/sid_stapo_hundenamen_od1002/download/KUL100OD1002.csv"
@@ -151,7 +168,7 @@ def find(ctx, name):
     matching_name = [dog for dog in dog_data if dog.name == name]
 
     if len(matching_name) == 0:
-        click.echo(f"No result for name {name}.")
+        console.rule(f"[red]No result for name {name}.[/red]", style="red b")
         return
 
     year = (
@@ -161,12 +178,23 @@ def find(ctx, name):
 
     result = [dog for dog in matching_name if dog.record_year == year]
 
+    def create_dog_search_table(title, dogs):
+        table = Table(title=title, box=box.HEAVY_HEAD, show_lines=True)
+        table.add_column("Name", style="bold cyan", min_width=12)
+        table.add_column("Birth Year", style="bold green")
+        table.add_column("Sex", style="bold magenta")
+
+        for dog in dogs:
+            table.add_row(dog.name, str(dog.birth_year), dog.sex.value)  # Angenommen, 'sex' ist ein Enum
+
+        return table
+
     if len(result) == 0:
-        click.echo(f"No result for year {year}.")
+        console.rule(f"[red]No result for year {year}.[/red]", style="red b")
         return
 
-    for dog in result:
-        click.echo(f"{dog.name} {dog.birth_year} ({dog.sex})")
+    console.rule()
+    console.print(create_dog_search_table("results", result), justify="center")
 
 
 @cli.command()
@@ -184,6 +212,7 @@ def stats(ctx):
     female_dog_count = 0
     first_year = None
     last_year = 0
+
 
     dog_data = (
         filter(lambda dog: dog.record_year == ctx.obj["year"], dog_data)
@@ -208,6 +237,18 @@ def stats(ctx):
             female_name_count[dog.name] = female_name_count.get(dog.name, 0) + dog.count
             female_dog_count += dog.count
 
+
+
+    # Tabellen erstellen Rich
+    def create_name_table(title, name_data):
+        table = Table(title=title, box=box.HEAVY_HEAD, show_lines=True)
+        table.add_column("Rank", style="dim bold blue", width=6)
+        table.add_column("Name", style="bold cyan", min_width=12)
+        table.add_column("Count", justify="right", style="green")
+        for i, (name, count) in enumerate(name_data, start=1):
+            table.add_row(str(i), name, str(count))
+        return table
+
     top_male_name_sorted = sorted(
         male_name_count.items(), key=lambda x: x[1], reverse=True
     )[:10]
@@ -227,23 +268,44 @@ def stats(ctx):
         [f"{name} ({count})" for name, count in top_overall_name_sorted]
     )
 
+    print("")
     if first_year is None:
-        click.echo(f"No data available for year: {ctx.obj['year']}")
+        console.print(f"No data available for year: {ctx.obj['year']}", style="error")
         return
 
     if ctx.obj["year"]:
-        click.echo(f"Showing stats for year: {ctx.obj['year']}")
+        console.rule(f"Showing stats for year: {ctx.obj['year']}")
     else:
-        click.echo(f"Showing stats for years: {first_year} to {last_year}")
+        console.rule(f"Showing stats for years: {first_year} to {last_year}", style="b")
+        print("")
 
-    click.echo(f"The longest dog name is: {longest_name}")
-    click.echo(f"The shortest dog name is: {shortest_name}")
-    click.echo(f"Top ten most common names overall: {top_overall_name_string}")
-    click.echo(f"Top ten most common female names: {top_female_name_string}")
-    click.echo(f"Top ten most common male names: {top_male_name_string}")
-    click.echo(f"Total number of female dogs: {female_dog_count}")
-    click.echo(f"Total number of male dogs: {male_dog_count}")
-    click.echo(f"Total number of dogs: {female_dog_count+male_dog_count}")
+    console.rule(f"[blue]The longest dog name is:[/blue]")
+    console.print(f"[cyan]{longest_name}[/cyan]", style="b", justify="center")
+    print("")
+    console.rule(f"[blue]The shortest dog name is:[/blue]")
+    console.print(f"[cyan]{shortest_name}[/cyan]", style="b", justify="center")
+    print("")
+    console.rule(f"[blue]Total number of female dogs:[/blue]")
+    console.print(f"[cyan]{female_dog_count}[/cyan]", style="b", justify="center")
+    print("")
+    console.rule(f"[blue]Total number of male dogs:[/blue]")
+    console.print(f"[cyan]{male_dog_count}[/cyan]", style="b", justify="center")
+    print("")
+    console.rule(f"[blue]Total number of dogs:[/blue]")
+    console.print(f"[cyan]{female_dog_count+male_dog_count}[/cyan]", style="b", justify="center")
+
+
+    print("")
+    # Erstellen und Anzeigen von Tabellen für die Top-Namen
+    table1 = (create_name_table("[bold]Top Ten Most Common Names Overall[/bold]", top_overall_name_sorted))
+    table2 = (create_name_table("[bold]Top Ten Most Common Female Names[/bold]", top_female_name_sorted))
+    table3 = (create_name_table("[bold]Top Ten Most Common Male Names[/bold]", top_male_name_sorted))
+
+    tables_columns = rich.columns.Columns([table1, table2, table3],  expand=True)
+
+    console.print(tables_columns)
+
+
 
 
 @cli.command()
@@ -251,25 +313,37 @@ def stats(ctx):
     "--output-dir", "-o", default=os.getcwd(), help="Directory to save dog picture to."
 )
 @click.pass_context
+
 def create(ctx, output_dir):
     """Make up a new dog at random."""
-    dog_data = DogDataCache()()
-    sex = random.choice([Dog.Sex.MALE, Dog.Sex.FEMALE])
-    matching_dogs = [dog for dog in dog_data if dog.sex == sex]
-    if ctx.obj["year"]:
-        matching_dogs = [
-            dog for dog in matching_dogs if dog.record_year == ctx.obj["year"]
-        ]
-    name = random.choice(matching_dogs).name
-    birth_year = random.choice(matching_dogs).birth_year
-    (image_data, image_ext) = get_dog_image(
-        URL_DOG_IMAGE_BASE, URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES
-    )
-    image_name = f"{name}_{birth_year}{image_ext}"
-    save_path = Path(output_dir) / image_name
-    with open(save_path, "wb") as f:
-        f.write(image_data)
-    click.echo(f"{name} {birth_year} ({sex}) [{save_path}]")
+    with Progress() as progress:
+        download_task = progress.add_task("[cyan]Downloading dog image...", total=100)
+        print("")
+
+        dog_data = DogDataCache()()
+        sex = random.choice([Dog.Sex.MALE, Dog.Sex.FEMALE])
+        matching_dogs = [dog for dog in dog_data if dog.sex == sex]
+        if ctx.obj["year"]:
+            matching_dogs = [
+                dog for dog in matching_dogs if dog.record_year == ctx.obj["year"]
+            ]
+        name = random.choice(matching_dogs).name
+        birth_year = random.choice(matching_dogs).birth_year
+        (image_data, image_ext) = get_dog_image(
+            URL_DOG_IMAGE_BASE, URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES
+        )
+        image_name = f"{name}_{birth_year}{image_ext}"
+        save_path = Path(output_dir) / image_name
+        while not progress.finished:
+            progress.update(download_task, advance=2)
+            sleep(0.1)
+        print("")
+
+        with open(save_path, "wb") as f:
+            f.write(image_data)
+            #progress.update(download_task, advance=100)
+        print("")
+        console.rule(f"{name} {birth_year} ({sex}) [{save_path}]")
 
 
 if __name__ == "__main__":
