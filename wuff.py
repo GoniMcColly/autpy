@@ -579,8 +579,7 @@ def create(ctx, output_dir):
         logging.exception("failed to download dog picture")
         sys.exit(-1)
 
-    # pylint: disable=anomalous-backslash-in-string
-    console.print(f"{name} {birth_year} ({sex}) \[{save_path}]")
+    console.print(f"{name} {birth_year} ({sex}) \\[{save_path}]")
     open_default(save_path)
 
 
