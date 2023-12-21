@@ -12,7 +12,7 @@ from pathlib import Path
 from enum import Enum
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict
 import click
 import rich
 from rich.console import Console
@@ -286,8 +286,8 @@ class DogStats:
 
     name_longest: str
     name_shortest: str
-    top_names_male: dict[str, int]
-    top_names_female: dict[str, int]
+    top_names_male: Dict[str, int]
+    top_names_female: Dict[str, int]
     dog_count_male: int
     dog_count_female: int
     first_year: Optional[int]
@@ -299,7 +299,7 @@ class DogStats:
         return self.dog_count_male + self.dog_count_female
 
     @property
-    def top_names_overall(self) -> dict[str, int]:
+    def top_names_overall(self) -> Dict[str, int]:
         """Top names overall (male and female)."""
         return sorted(
             self.top_names_male + self.top_names_female,
