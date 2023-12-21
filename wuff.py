@@ -25,6 +25,7 @@ from typing import Optional, Dict
 import requests
 import pytest
 import responses
+from dotenv import load_dotenv
 import click
 import rich
 from rich.console import Console
@@ -43,12 +44,13 @@ __version__ = ".".join(__version_info__)
 console = Console()
 
 
-# 🙄
-# pylint: disable=line-too-long
-URL_DOG_DATA = "https://data.stadt-zuerich.ch/dataset/sid_stapo_hundenamen_od1002/download/KUL100OD1002.csv"
-URL_DOG_IMAGE_BASE = "https://random.dog"
-URL_DOG_IMAGE_LIST = f"{URL_DOG_IMAGE_BASE}/doggos"
-ALLOWED_IMAGE_SUFFIXES = [".png", ".jpg", ".jpeg"]
+load_dotenv()
+URL_DOG_DATA = os.getenv("URL_DOG_DATA")
+URL_DOG_IMAGE_BASE = os.getenv("URL_DOG_IMAGE_BASE")
+URL_DOG_IMAGE_LIST = os.getenv("URL_DOG_IMAGE_LIST")
+ALLOWED_IMAGE_SUFFIXES = [
+    s.strip() for s in os.getenv("ALLOWED_IMAGE_SUFFIXES").split(",")
+]
 
 
 @dataclass(frozen=True)
@@ -301,7 +303,12 @@ def cli(ctx, year, verbose):
     logging.basicConfig(level=logging.DEBUG if verbose else logging.WARNING)
     logging.debug("verbose logging enabled")
 
-    logging.debug("year set to %d", ctx.obj["year"])
+    logging.debug("Read environment:")
+    logging.debug("URL_DOG_DATA: %s", URL_DOG_DATA)
+    logging.debug("URL_DOG_IMAGE_BASE: %s", URL_DOG_IMAGE_BASE)
+    logging.debug("URL_DOG_IMAGE_LIST: %s", URL_DOG_IMAGE_LIST)
+    logging.debug("ALLOWED_IMAGE_SUFFIXES: %s", ALLOWED_IMAGE_SUFFIXES)
+    logging.debug("year set to %s", str(ctx.obj["year"]))
 
 
 @cli.command()
