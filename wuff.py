@@ -346,7 +346,7 @@ def find(ctx, name):
         table = Table(title=title, box=box.HEAVY_HEAD, show_lines=True)
         table.add_column("Name", style="bold cyan", min_width=12)
         table.add_column("Birth Year", style="bold green")
-        table.add_column("Sex", style="bold magenta")
+        table.add_column("Sex :male_sign: :female_sign:", style="bold magenta")
 
         for dog in dogs:
             table.add_row(dog.name, str(dog.birth_year), dog.sex.value)
@@ -518,19 +518,19 @@ def stats(ctx):
         )
         print("")
 
-    console.rule("[blue]The longest dog name is:[/blue]")
+    console.rule("[blue]The longest :dog: name is:[/blue]")
     console.print(f"[cyan]{s.name_longest}[/cyan]", style="b", justify="center")
     print("")
-    console.rule("[blue]The shortest dog name is:[/blue]")
+    console.rule("[blue]The :shorts:-est :dog: name is:[/blue]")
     console.print(f"[cyan]{s.name_shortest}[/cyan]", style="b", justify="center")
     print("")
-    console.rule("[blue]Total number of female dogs:[/blue]")
+    console.rule("[blue]Total number of :female_sign: :guide_dog::dog::guide_dog: :[/blue]")
     console.print(f"[cyan]{s.dog_count_female}[/cyan]", style="b", justify="center")
     print("")
-    console.rule("[blue]Total number of male dogs:[/blue]")
+    console.rule("[blue]Total number of :male_sign: :guide_dog::dog::guide_dog: :[/blue]")
     console.print(f"[cyan]{s.dog_count_male}[/cyan]", style="b", justify="center")
     print("")
-    console.rule("[blue]Total number of dogs:[/blue]")
+    console.rule("[blue]Total number of :guide_dog::dog::guide_dog: :[/blue]")
     console.print(f"[cyan]{s.dog_count_overall}[/cyan]", style="b", justify="center")
 
     def create_name_table(title, name_data):
@@ -692,6 +692,7 @@ def create(ctx, output_dir):
         sys.exit(-1)
 
     console.print(f"{name} {birth_year} ({sex}) \\[{save_path}]")
+    console.print(f":hot_dog: succesfully created!")
     open_default(save_path)
 
 
