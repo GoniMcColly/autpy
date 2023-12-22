@@ -524,10 +524,14 @@ def stats(ctx):
     console.rule("[blue]The :shorts:-est :dog: name is:[/blue]")
     console.print(f"[cyan]{s.name_shortest}[/cyan]", style="b", justify="center")
     print("")
-    console.rule("[blue]Total number of :female_sign: :guide_dog::dog::guide_dog: :[/blue]")
+    console.rule(
+        "[blue]Total number of :female_sign: :guide_dog::dog::guide_dog: :[/blue]"
+    )
     console.print(f"[cyan]{s.dog_count_female}[/cyan]", style="b", justify="center")
     print("")
-    console.rule("[blue]Total number of :male_sign: :guide_dog::dog::guide_dog: :[/blue]")
+    console.rule(
+        "[blue]Total number of :male_sign: :guide_dog::dog::guide_dog: :[/blue]"
+    )
     console.print(f"[cyan]{s.dog_count_male}[/cyan]", style="b", justify="center")
     print("")
     console.rule("[blue]Total number of :guide_dog::dog::guide_dog: :[/blue]")
@@ -692,7 +696,7 @@ def create(ctx, output_dir):
         sys.exit(-1)
 
     console.print(f"{name} {birth_year} ({sex}) \\[{save_path}]")
-    console.print(f":hot_dog: succesfully created!")
+    console.print(":hot_dog: succesfully created!")
     open_default(save_path)
 
 
