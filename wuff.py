@@ -26,7 +26,7 @@ import requests
 import pytest
 import responses
 from dotenv import load_dotenv
-import click
+import rich_click as click
 import rich
 from rich.console import Console
 from rich.table import Table
