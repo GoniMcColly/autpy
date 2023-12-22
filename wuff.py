@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """
-This script provides a command line interface to search for dogs, retrieve
-statistical information about those dogs, and to make up a new dog.
+Mit Wuff und Wau!
+
+This script provides a CLI tool to explore data about dogs from the city of
+Zurich.
+
+The following functions are available:
+- Search for a dog by name
+- Collect and calculate various statistics
+- Make up a new dog based on real data
 """
+
 # 🙄
 # pylint: disable=multiple-imports
+# import pdb; pdb.set_trace() # allows debugging when running pytest
 import csv
 import os, sys, subprocess
 import random
@@ -13,6 +22,9 @@ from enum import Enum
 import logging
 from dataclasses import dataclass
 from typing import Optional, Dict
+import requests
+import pytest
+import responses
 import click
 import rich
 from rich.console import Console
@@ -20,9 +32,6 @@ from rich.table import Table
 from rich import box
 from rich.progress import Progress
 from rich.traceback import install
-import requests
-import pytest
-import responses
 
 install(show_locals=True)
 
@@ -74,10 +83,13 @@ class Dog:
 
 
 class TestDog:
-    """Unit tests for the Dog class."""
+    """Test the Dog class."""
 
-    def test_dog_from_dict(self):
-        """Test creating a dog from a dictionary."""
+    def test_from_dict(self):
+        """
+        It should be possible to create a dog from a dictionary, as long as
+        that dictionary contains all the necessary keys.
+        """
         dog = Dog.from_dict(
             {
                 "HundenameText": "Shoto",
@@ -93,11 +105,35 @@ class TestDog:
         assert dog.record_year == 2024
         assert dog.count == 1
 
-    def test_dog_from_dict_invalid(self):
+    def test_from_dict_with_additional_keys(self):
+        """
+        Creating a dog from a dictionary should work as long as the necessary
+        keys exist.
+        The presence of additional keys should be ignored.
+        """
+        dog = Dog.from_dict(
+            {
+                "HundenameText": "Shoto",
+                "Spitzname": "Sho",  # additional field
+                "SexHundCd": "1",
+                "GebDatHundJahr": "2005",  # additional field
+                "GebDatHundTag": 12,
+                "StichtagDatJahr": "2024",
+                "AnzHunde": 1,
+            }
+        )
+        assert dog.name == "Shoto"
+        assert dog.sex == Dog.Sex.MALE
+        assert dog.birth_year == 2005
+        assert dog.record_year == 2024
+        assert dog.count == 1
+
+    def test_from_dict_invalid(self):
         """Test creating a dog from an invalid dictionary (should fail)."""
         with pytest.raises(KeyError):
             Dog.from_dict(
                 {
+                    "HundenameText": "Shoto",
                     "Hello": "World",
                     "SomeNumber": 5,
                 }
@@ -108,12 +144,13 @@ class DogData:
     """DogData provides a reusable iterator over dog statistics."""
 
     @staticmethod
-    def retrieve(url):
+    def retrieve(url, encoding=None):
         """Retrieve data from an API."""
 
         def get_dog_data(url):
             r = requests.get(url, timeout=5)
-            r.encoding = "utf-8-sig"
+            if encoding:
+                r.encoding = encoding
             return r.text.splitlines()
 
         def parse_csv(lines):
@@ -125,8 +162,11 @@ class DogData:
     def __init__(self, data):
         self.current = 0
         self.data = [Dog.from_dict(row) for row in data]
+        if len(self.data) == 0:
+            raise ValueError("no dog data provided")
 
     def __iter__(self):
+        # Reset iterator so that it can be reused.
         self.current = 0
         return self
 
@@ -139,33 +179,68 @@ class DogData:
 
 
 class TestDogData:
-    """Unit tests for the DogData class."""
-
-    # @responses.activate
-    # def test_dogdata_retrieve(self):
-    #    """Test retrieving API data."""
-    #    # pylint: disable=protected-access
-    #    responses._add_from_file(file_path="network-recording.yaml")
-    #    # @fixme: downloaded data is in a weird encoding, how do I make responses understand that?
-    #    assert isinstance(DogData.retrieve(URL_DOG_DATA), DogData)
+    """Test the DogData class."""
 
     @responses.activate
-    def test_dogdata_retrieve_wrong_data(self):
+    def test_retrieve(self):
+        """Test retrieving API data."""
+        responses.add(
+            responses.GET,
+            URL_DOG_DATA,
+            # pylint: disable=line-too-long
+            body=""""StichtagDatJahr","DatenstandCd","HundenameText","GebDatHundJahr","SexHundCd","SexHundLang","SexHundSort","AnzHunde"
+2015,"D","(Karl) Kaiser Karl vom Edersee",2013,"1","männlich",1,1
+2015,"D","?",2009,"2","weiblich",2,1
+2015,"D","?",2010,"2","weiblich",2,2
+2017,"D","Rexi",2015,"2","weiblich",2,1
+2017,"D","Rexli",1998,"1","männlich",1,1
+2017,"D","Rey",2006,"1","männlich",1,1
+2017,"D","Rey",2016,"1","männlich",1,1
+2022,"D","Chloé",2021,"2","weiblich",2,1
+2022,"D","Chloë",2016,"2","weiblich",2,1
+2022,"D","Choco",2011,"1","männlich",1,1""",
+            status=200,
+        )
+        dog_data = DogData.retrieve(URL_DOG_DATA)
+        assert isinstance(dog_data, DogData)
+        assert len(list(dog_data)) == 10
+
+    @responses.activate
+    def test_retrieve_incorrect_csv(self):
         """Test retrieving invalid data."""
-        # pylint: disable=protected-access
-        responses._add_from_file(file_path="network-recording.yaml")
+        wrong_url = "https://www.example.com/no-dog-data-here/"
+        responses.add(
+            responses.GET,
+            wrong_url,
+            body="""This,Data,Is,Wrong
+1,2,3,4
+5,6,7,8""",
+            status=200,
+        )
         with pytest.raises(KeyError):
-            DogData.retrieve("https://www.example.com/no-dog-data-here/")
+            DogData.retrieve(wrong_url)
 
     @responses.activate
-    def test_dogdata_retrieve_wrong_url(self):
-        """Test retrieving data from an invalid URL."""
-        # pylint: disable=protected-access
-        responses._add_from_file(file_path="network-recording.yaml")
-        with pytest.raises(requests.exceptions.RequestException):
-            DogData.retrieve("https://this-page-does-not.exist/")
+    def test_retrieve_this_data_isnt_even_csv(self):
+        """Test retrieving invalid data."""
+        wrong_url = "https://www.example.com/no-dog-data-here/"
+        responses.add(
+            responses.GET,
+            wrong_url,
+            body="This is not dog data!",
+            status=200,
+        )
+        with pytest.raises(ValueError):
+            DogData.retrieve(wrong_url)
 
-    def test_dogdata_iterator(self):
+    @responses.activate
+    def test_retrieve_wrong_url(self):
+        """Test retrieving data from an invalid URL."""
+        wrong_url = "https://this-page-does-not.exist/"
+        with pytest.raises(requests.exceptions.RequestException):
+            DogData.retrieve(wrong_url)
+
+    def test_iterator(self):
         """Test that the iterator can be reused."""
         dogs = DogData(
             [
@@ -201,13 +276,14 @@ class Singleton(type):
         return cls._instances[cls]
 
 
+# 🙄
 # pylint: disable=too-few-public-methods
 class DogDataCache(metaclass=Singleton):
     """Caches the API response."""
 
     def __init__(self):
         logging.debug("retrieving dog data from API")
-        self.dog_data = DogData.retrieve(URL_DOG_DATA)
+        self.dog_data = DogData.retrieve(URL_DOG_DATA, encoding="utf-8-sig")
 
     def __call__(self):
         return self.dog_data
@@ -292,6 +368,7 @@ class DogStats:
     dog_count_female: int
     first_year: Optional[int]
     last_year: int
+    top_limit: int = 10
 
     @property
     def dog_count_overall(self) -> int:
@@ -305,7 +382,7 @@ class DogStats:
             self.top_names_male + self.top_names_female,
             key=lambda x: x[1],
             reverse=True,
-        )[:10]
+        )[: self.top_limit]
 
 
 def analyze(dog_data: DogData, year: Optional[int] = None) -> DogStats:
@@ -509,11 +586,39 @@ def download_file(file_url, save_path, progress_start=None, progress_update=None
         )
 
 
+@responses.activate
 def test_download_image_file(tmp_path):
     """Test downloading a dog picture."""
+    responses.add(
+        responses.GET,
+        URL_DOG_IMAGE_LIST,
+        json=[
+            "00186969-c51d-462b-948b-30a7e1735908.jpg",
+            "00564ba3-e5cb-4b2b-8d97-c65a9ef26c23.png",
+            "00b417af-0b5f-42d7-9ad0-6aab6c3db491.jpg",
+        ],
+        status=200,
+    )
+    png_content = b"""\x89\x50\x4E\x47\x0D\x0A\x1A\x0A<-PNG magic number.
+This is definitely real PNG data!
+Did you know that PNG is pronounced Ping which means 'Ping is not GIF'?"""
+    responses.add(
+        responses.GET,
+        f"{URL_DOG_IMAGE_BASE}/00564ba3-e5cb-4b2b-8d97-c65a9ef26c23.png",
+        body=png_content,
+        content_type="image/png",
+        headers={"Content-Length": str(len(png_content))},
+        status=200,
+    )
     image_urls = get_dog_image_urls(URL_DOG_IMAGE_LIST, ALLOWED_IMAGE_SUFFIXES)
-    image_url = random.choice(image_urls)
-    download_file(f"{URL_DOG_IMAGE_BASE}/{image_url}", tmp_path / Path(image_url).name)
+    image_url = image_urls[1]
+    download_path = tmp_path / Path(image_url).name
+    download_file(f"{URL_DOG_IMAGE_BASE}/{image_url}", download_path)
+
+    with open(download_path, "rb") as fd:
+        content = fd.read()
+        assert len(content) == len(png_content)
+        assert content == png_content
 
 
 @cli.command()
@@ -579,8 +684,7 @@ def create(ctx, output_dir):
         logging.exception("failed to download dog picture")
         sys.exit(-1)
 
-    # pylint: disable=anomalous-backslash-in-string
-    console.print(f"{name} {birth_year} ({sex}) \[{save_path}]")
+    console.print(f"{name} {birth_year} ({sex}) \\[{save_path}]")
     open_default(save_path)
 
 
