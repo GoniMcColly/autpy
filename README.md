@@ -1,4 +1,13 @@
 # Automatisierung mit Python
+Mit Wuff und Wau!
+
+This script provides a CLI tool to explore data about dogs from the city of
+Zurich.
+
+The following functions are available:
+- Search for a dog by name
+- Collect and calculate various statistics
+- Make up a new dog based on real data
 
 ## Getting Started
 
